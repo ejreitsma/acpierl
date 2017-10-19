@@ -1,0 +1,2 @@
+# acpierl
+Erlang ACPI library.
