@@ -1,0 +1,10 @@
+-record(table_header,
+	{signature,
+	 length,
+	 revision,
+	 checksum,
+	 oem_id,
+	 oem_table_id,
+	 oem_revision,
+	 creator_id,
+	 creator_revision}).

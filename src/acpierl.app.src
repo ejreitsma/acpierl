@@ -1,0 +1,15 @@
+{application, acpierl,
+ [
+  {description, "An Erlang ACPI library"},
+  {vsn, "1"},
+  {modules, [
+             aml_parser,
+	     hexutil
+            ]},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
