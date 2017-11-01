@@ -44,10 +44,7 @@ parse_values(<<>>, Res) ->
 parse_values(Data, Res) ->
     OldIndent = get(indent),
     put(indent, [$* | OldIndent]),
-    io:format("~s Remaining data: ~s~n", [OldIndent, hexutil:bin_to_hex(Data)]),
     {More, Value} = parse_value(Data),
-    io:format("~s Got ~p, left ~s~n", [OldIndent, Value, hexutil:bin_to_hex(More)]),
-    put(indent, OldIndent),
     parse_values(More, [Value | Res]).
 
 parse_value(<<16#00, Data/binary>>) ->
@@ -60,7 +57,6 @@ parse_value(<<16#06, Data/binary>>) ->
     {M2, {alias, Name1, Name2}};
 parse_value(<<16#08, Data/binary>>) ->
     {Name, M1} = parse_item(namestring, Data),
-    io:format("~s Name: ~p~n", [get(indent), Name]),
     {M2, Object} = parse_value(M1),
     {M2, {name, Name, Object}};
 parse_value(<<16#0a, Byte, Data/binary>>) ->
@@ -90,12 +86,10 @@ parse_value(<<16#11, Data/binary>>) ->
      {buffer, BufferSize, M2}};
 parse_value(<<16#12, Data/binary>>) ->
     {PkgLength, More} = parse_item(pkglength, Data),
-    io:format("~s Package (size ~p) ", [get(indent), PkgLength]),
     LengthSize = size(Data) - size(More),
     RemainingLength = PkgLength - LengthSize,
     <<D:RemainingLength/binary, M1/binary>>  = More,
     <<NumElements, M2/binary>> = D,
-    io:format("(~p)~n", [NumElements]),
     Values = parse_values(M2),
     {M1,
      {package, NumElements, Values}};
@@ -104,7 +98,6 @@ parse_value(<<16#14, Data/binary>>) ->
     RemainingLength = PkgLength - (size(Data) - size(More)),
     <<D:RemainingLength/binary, M1/binary>> = More,
     {Name, <<ArgCount, M2/binary>>} = parse_item(namestring, D),
-    %io:format("Method: ~p~n", [Name]),
     {M1,
      {method, Name, ArgCount, parse_values(M2)}};
 parse_value(<<C1, _/binary>> = D) when C1 >= 16#30,
@@ -142,6 +135,25 @@ parse_value(<<16#5b, 16#21, Data/binary>>) ->
 parse_value(<<16#5b, 16#22, Data/binary>>) ->
     {M1, Value} = parse_value(Data),
     {M1, {sleep, Value}};
+parse_value(<<16#5b, 16#23, Data/binary>>) ->
+    {Name, <<W:16/little, M1/binary>>} = parse_item(supername, Data),
+    {M1, {acquire, Name, W}};
+parse_value(<<16#5b, 16#24, Data/binary>>) ->
+    {Name, M1} = parse_item(supername, Data),
+    {M1, {signal, Name}};
+parse_value(<<16#5b, 16#25, Data/binary>>) ->
+    {Name, M1} = parse_item(supername, Data),
+    {M2, Value} = parse_value(M1),
+    {M2, {wait, Name, Value}};
+parse_value(<<16#5b, 16#26, Data/binary>>) ->
+    {Name, M1} = parse_item(supername, Data),
+    {M1, {reset, Name}};
+parse_value(<<16#5b, 16#27, Data/binary>>) ->
+    {Name, M1} = parse_item(supername, Data),
+    {M1, {release, Name}};
+parse_value(<<16#5b, 16#2a, Data/binary>>) ->
+    {Name, M1} = parse_item(supername, Data),
+    {M1, {unload, Name}};
 parse_value(<<16#5b, 16#30, Data/binary>>) ->
     {Data, revision};
 parse_value(<<16#5b, 16#31, Data/binary>>) ->
@@ -457,7 +469,6 @@ parse_value(<<16#cc, Data/binary>>) ->
 parse_value(<<16#ff, Data/binary>>) ->
     {Data, ones};
 parse_value(Other) ->
-    io:format("UNSUPPORTED: ~p~n", [Other]),
     throw(x),
     {<<>>, 
      {unsupported, Other}}.
@@ -500,11 +511,9 @@ parse_item(pkglength, <<0:2, L:6, More/binary>>) ->
 parse_item(pkglength, <<C:2, 0:2, LSB:4, More/binary>>) ->
     L = C * 8,
     <<Val:L/little, M1/binary>> = More, 
-    io:format("C = ~p, Val = ~p, LSB = ~p => length ~p~n", [C, Val, LSB, (Val bsl 4) + LSB]),
     {(Val bsl 4) + LSB, M1};
     %%{(LSB bsl L) + Val, M1};
 parse_item(Type, Data) ->
-    io:format("UNSUPPORTED ~p: ~p~n", [Type, Data]),
     {{Type, {unsupported, Data}}, <<>>}.
 
 read_multiple(Count, Type, Data) ->
