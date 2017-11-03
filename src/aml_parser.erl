@@ -3,7 +3,9 @@
 
 -include("acpi.hrl").
 
--compile(export_all).
+-export([parse_file/1,
+	 parse_table/1,
+	 parse_resources/1]).
 
 parse_file(FileName) ->
     {ok, Bin} = file:read_file(FileName),
@@ -561,3 +563,150 @@ find_until(Data, Value, Index) ->
 	_ ->
 	    find_until(Data, Value, Index + 1)
     end.
+
+parse_resources(<<>>) ->
+    [];
+%% small resource data tyoe
+parse_resources(<<0:1, Type:4, L:3, Val:L/bytes, More/bytes>>) ->
+    [parse_small_resource(Type, Val) | parse_resources(More)];
+parse_resources(<<1:1, Type:7, L:16/little, Val:L/bytes, More/bytes>>) ->
+    [parse_large_resource(Type, Val) | parse_resources(More)].
+
+parse_small_resource(4, <<IRQs:2/bytes, M/binary>>) ->
+    {irq, {list_to_tuple(lists:append([byte_to_bitlist(B) || <<B>> <= IRQs])),
+	   M}};
+parse_small_resource(5, <<DMA, 0:1, TYP:2, _:2, BM:1, SIZ:2>>) ->
+    {dma, {byte_to_bitlist(DMA), TYP, BM, SIZ}};
+parse_small_resource(6, <<>>) ->
+    {start, undefined};
+parse_small_resource(6, <<_:4, Performance:2, Compatibility:2>>) ->
+    {start, {Performance, Compatibility}};
+parse_small_resource(7, <<>>) ->
+    {'end', undefined};
+parse_small_resource(8, <<0:7, DEC:1, Min:16/little, Max:16/little, ALN, LEN>>) ->
+    {io, {DEC, Min, Max, ALN, LEN}};
+parse_small_resource(9, <<BAS:16/little, LEN>>) ->
+    {fixed_io, {BAS, LEN}};
+parse_small_resource(10, <<DMA:16/little, TYP:16/little, SIZ>>) ->
+    {fixed_dma, {DMA, TYP, 8 bsl SIZ}};
+parse_small_resource(14, VendorDefined) ->
+    {vendorDefined, VendorDefined};
+parse_small_resource(15, <<Checksum>>) ->
+    {checksum, Checksum};
+parse_small_resource(Type, Val) ->
+    {Type, small, Val}.
+
+parse_large_resource(2, <<ASI,
+			  RBW,
+			  RBO,
+			  ASZ,
+			  ADR:64/little>>) ->
+    {register, {ASI, RBW, RBO, ASZ, ADR}};
+parse_large_resource(7, <<Type, 
+			  0:4, MAF:1, MIF:1, DEC:1, _:1, %% General Flags
+			  TypeSpecificFlags,
+			  GRA:32/little,
+			  MIN:32/little,
+			  MAX:32/little,
+			  TRA:32/little,
+			  LEN:32/little>>) ->
+    {dword_address_space, {Type,
+			  MAF, MIF, DEC, TypeSpecificFlags,
+			  GRA,
+			  MIN,
+			  MAX,
+			  TRA,
+			  LEN}};
+parse_large_resource(7, <<Type, 
+			  0:4, MAF:1, MIF:1, DEC:1, _:1, %% General Flags
+			  TypeSpecificFlags,
+			  GRA:32/little,
+			  MIN:32/little,
+			  MAX:32/little,
+			  TRA:32/little,
+			  LEN:32/little,
+			  ResourceSourceIndex,
+			  ResourceSource/binary>>) ->
+    {dword_address_space, {Type,
+			  MAF, MIF, DEC, TypeSpecificFlags,
+			  GRA,
+			  MIN,
+			  MAX,
+			  TRA,
+			  LEN,
+			  {ResourceSourceIndex, ResourceSource}}};
+parse_large_resource(8, <<Type, 
+			  0:4, MAF:1, MIF:1, DEC:1, _:1, %% General Flags
+			  TypeSpecificFlags,
+			  GRA:16/little,
+			  MIN:16/little,
+			  MAX:16/little,
+			  TRA:16/little,
+			  LEN:16/little>>) ->
+    {word_address_space, {Type,
+			  MAF, MIF, DEC, TypeSpecificFlags,
+			  GRA,
+			  MIN,
+			  MAX,
+			  TRA,
+			  LEN}};
+parse_large_resource(8, <<Type, 
+			  0:4, MAF:1, MIF:1, DEC:1, _:1, %% General Flags
+			  TypeSpecificFlags,
+			  GRA:16/little,
+			  MIN:16/little,
+			  MAX:16/little,
+			  TRA:16/little,
+			  LEN:16/little,
+			  ResourceSourceIndex,
+			  ResourceSource/binary
+			>>) ->
+    {word_address_space, {Type,
+			  MAF, MIF, DEC, TypeSpecificFlags,
+			  GRA,
+			  MIN,
+			  MAX,
+			  TRA,
+			  LEN,
+			  {ResourceSourceIndex, ResourceSource}}};
+parse_large_resource(10, <<Type, 
+			   0:4, MAF:1, MIF:1, DEC:1, _:1, %% General Flags
+			   TypeSpecificFlags,
+			   GRA:64/little,
+			   MIN:64/little,
+			   MAX:64/little,
+			   TRA:64/little,
+			   LEN:64/little>>) ->
+    {qword_address_space, {Type,
+			   MAF, MIF, DEC, TypeSpecificFlags,
+			   GRA,
+			   MIN,
+			   MAX,
+			   TRA,
+			   LEN}};
+parse_large_resource(10, <<Type, 
+			   0:4, MAF:1, MIF:1, DEC:1, _:1, %% General Flags
+			   TypeSpecificFlags,
+			   GRA:64/little,
+			   MIN:64/little,
+			   MAX:64/little,
+			   TRA:64/little,
+			   LEN:64/little,
+			   ResourceSourceIndex,
+			   ResourceSource/binary
+			 >>) ->
+    {qword_address_space, {Type,
+			   MAF, MIF, DEC, TypeSpecificFlags,
+			   GRA,
+			   MIN,
+			   MAX,
+			   TRA,
+			   LEN,
+			   {ResourceSourceIndex, ResourceSource}}};
+parse_large_resource(Type, Val) ->
+    {Type, large, Val}.
+
+byte_to_bitlist(N) ->
+    lists:reverse([B || <<B:1>> <= <<N>>]).
+
+
